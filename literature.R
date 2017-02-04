@@ -24,7 +24,9 @@
 
 numPlayers <- 6
 numFlavors <- 4
-numSets <- 2
+numPoles <- 2
+numSets <- 8
+setIndices <- c(1:numSets)
 numCards <- 48
 numCardsInSet <- 6
 numCardsInFlavor <- numCardsInSet * 2
@@ -61,8 +63,18 @@ cardToSetPolarity <- function(cardIndex){
     cardNum <- cardIndex - 1
     # To identify minor or major
     index <- floor(cardNum / numCardsInSet)
-    setPolarity <- (index %% numSets) + 1
+    setPolarity <- (index %% numPoles) + 1
     return (setPolarity)
+}
+
+setToName <- function(setNum){
+    highCard <- setNum * numCardsInSet
+    flavorId <- cardToFlavor(highCard)
+    flavorName <- nameFlavors[flavorId]
+    setPolarity <- cardToSetPolarity(highCard)
+    setName <- nameSets[setPolarity]
+    comboName <- paste(flavorName, setName, sep="-")
+    return(comboName) 
 }
 
 cardToName <- function(cardNum){
@@ -113,10 +125,13 @@ initProb <- function (thePlayer){
 
 
 transaction <- function(asker, giver, theCard){
+    cardName <- cardToName(theCard)
     if (!(theCard %in% askableCards(asker))){
-        print (paste(asker, "cannot ask this card:", theCard))
-        return ()
+        print (paste(asker, "cannot ask this card:", theCard, cardName))
+        return (asker)
     }
+    
+    print (paste(asker, "asks the card", theCard, cardName, "from", giver))
     askerIndex <- which(playerNames == asker)
     askerCards <- cardsAndPlayers[[askerIndex]]
     
@@ -138,7 +153,8 @@ transaction <- function(asker, giver, theCard){
         probTable[view(playerNames), nonHolders, theCard] <<- 0
         
         print ("Transaction Done!")
-        print (paste(asker, "gets the card", theCard, "from", giver))
+        print (paste(asker, "gets the card", theCard, cardName, "from", giver))
+        return (asker)
     }
     else{
         # All know that this card is not present with both the players
@@ -150,8 +166,9 @@ transaction <- function(asker, giver, theCard){
         sapply(viewerNames, updateProb, theCard)
         
         print ("Transaction Not Done!")
-        print (paste(giver, "does not have the card", theCard, 
+        print (paste(giver, "does not have the card", theCard, cardName,
             "to give to", asker))
+        return (giver)
     }
 }
 
@@ -164,13 +181,18 @@ updateProb <- function(theViewer, theCard){
     probTable[theViewer, holderNames[nonZeroProb], theCard] <<- updatedProb
 }
 
-sameSetCards <- function(theCard){
-    # Given a card, give the related 5 cards in the set
-    setNum <- cardToSetNum(theCard)
+setCards <- function(setNum){
     maxLimit <- setNum * numCardsInSet
     minLimit <- maxLimit - numCardsInSet + 1
-    relatedCards <- setdiff(c(minLimit:maxLimit), theCard)
-    return(relatedCards)
+    givenSetCards <- c(minLimit:maxLimit)
+    return(givenSetCards)
+}
+
+sameSetCards <- function(theCard){
+    # Given a card, give all the cards in that set, including itself
+    setNum <- cardToSetNum(theCard)
+    givenSetCards <- setCards(setNum)
+    return(givenSetCards)
 }
 
 askableCards <- function(thePlayer){
@@ -182,6 +204,67 @@ askableCards <- function(thePlayer){
     return(askCards)
 }
 
+canFinishSet <- function(theSet, thePlayer){
+    rootPresent <- checkRootExists(theSet, thePlayer)
+    cards <- setCards(theSet)
+    # Get the probabilites for all cards in the set for all players, as the 
+    # current player views - of what is knowledge of
+    variousProbs <- c(probTable[view(thePlayer),,cards])
+    probsNotZeroOne <- setdiff(variousProbs, c(1,0))
+    # If a set is formed, he must have all 0 and 1 probabilites for the set
+    hasSetFormed <- (length(probsNotZeroOne) == 0)
+    return (rootPresent && hasSetFormed)
+}
+
+opponents <- function(playerIndex){
+    if(playerIndex %in% c(1,3,5)){
+        oppPlayers <- c(2,4,6)
+    } else {
+        oppPlayers <- c(1,3,5)
+    }
+    return(oppPlayers)
+}
+
+sameTeam <- function(playerIndex){
+    if(playerIndex %in% c(1,3,5)){
+        teamPlayers <- setdiff(c(1,3,5), playerIndex)
+    } else {
+        teamPlayers <- setdiff(c(2,4,6), playerIndex)
+    }
+    return(teamPlayers)
+}
+
+checkRootExists <- function(theSet, thePlayer){
+    cards <- setCards(theSet)
+    setCardsWithPlayer <- 
+        sum(c(probTable[view(thePlayer), hold(thePlayer), cards]))
+    doesRootExist <- (setCardsWithPlayer >= 1)
+    return (doesRootExist)
+}
+
+finishPossibleSets <- function(thePlayer){
+    # When the chance comes, check if any set can be finished
+    setFinishes <- sapply(setIndices, canFinishSet, thePlayer)
+    finishableSets <- which(setFinishes == TRUE)
+    print(finishableSets)
+    finishPossible <- (length(finishableSets) > 0)
+
+    if (finishPossible){
+        for (theSet in finishableSets){
+            cards <- setCards(theSet)
+            giverCardCombo <- which(probTable[view(thePlayer),,cards]==1)
+            for (ac in giverCardCombo){
+                cardInSet <- (ac - 1) %/% 6 + 1       # Quotient
+                giverIndex <- (ac - 1) %% 6 + 1       # Reminder
+                theCard <- cards[cardInSet] 
+                giver <- playerNames[giverIndex] 
+                
+                transaction(thePlayer, giver, theCard)
+            }
+            print(paste(thePlayer, "finishes the set", setToName(theSet)))
+        }
+    }
+}
 
 # Card Numbers will be 1 to 48
 # Each player will get 8 cards randomly - taken care by 'sample' function
@@ -205,3 +288,33 @@ probTable[,,] <- NA
 # update all initial probabilities using initProb function
 sapply(playerNames, initProb)
 
+
+# Game Starts Here
+startPlayerIndex <- sample(numPlayers, 1)
+thePlayer <- playerNames[startPlayerIndex]
+
+gameGo <- function(thePlayer){
+    finishPossibleSets(thePlayer)
+    cardsToAsk <- askableCards(thePlayer)
+    
+    playerIndex <- which(playerNames == thePlayer)
+    currentHolders <- setdiff(holderNames, 
+        holderNames[c(playerIndex, sameTeam(playerIndex))])
+    lenHolders <- length(currentHolders)    
+    theViewer <- view(thePlayer)
+    maxValue <- max(probTable[theViewer, currentHolders, cardsToAsk])
+    maxPosn <- which(probTable[theViewer, currentHolders, cardsToAsk] == maxValue)
+    lmax <- length(maxPosn)
+    # can ask anyone randomly who all have same max probabilites.
+    randomIndex <- sample(lmax, 1)
+
+    cardToAsk <- cardsToAsk[(maxPosn - 1) %/% lenHolders  + 1][randomIndex]
+    holderToAsk <- currentHolders[(maxPosn - 1) %% lenHolders + 1][randomIndex]
+    playerToAsk <- substring(holderToAsk, 2)
+    nextPlayer <- transaction(thePlayer, playerToAsk, cardToAsk)
+
+    print(cardsAndPlayers)
+    print(probTable[,,cardToAsk])
+    readline(prompt="Press [enter] to continue - Next Round!")
+    gameGo(nextPlayer)
+}
