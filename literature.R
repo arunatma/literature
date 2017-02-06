@@ -293,6 +293,12 @@ sapply(playerNames, initProb)
 startPlayerIndex <- sample(numPlayers, 1)
 thePlayer <- playerNames[startPlayerIndex]
 
+pickMax <- function (inArray){
+    # pick the max value other than 1
+    inArray[which(inArray == 1)] <- -1      # Assign lowest value to P = 1
+    return (max (inArray))
+}
+
 gameGo <- function(thePlayer){
     finishPossibleSets(thePlayer)
     cardsToAsk <- askableCards(thePlayer)
@@ -302,7 +308,7 @@ gameGo <- function(thePlayer){
         holderNames[c(playerIndex, sameTeam(playerIndex))])
     lenHolders <- length(currentHolders)    
     theViewer <- view(thePlayer)
-    maxValue <- max(probTable[theViewer, currentHolders, cardsToAsk])
+    maxValue <- pickMax(probTable[theViewer, currentHolders, cardsToAsk])
     maxPosn <- which(probTable[theViewer, currentHolders, cardsToAsk] == maxValue)
     lmax <- length(maxPosn)
     # can ask anyone randomly who all have same max probabilites.
