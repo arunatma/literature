@@ -37,6 +37,12 @@ nameCards <- list(
     c("9", "10", "J", "Q", "K", "A"))
 playerNames <- c("Abel", "Benz", "Carl", "Dira", "Elly", "Fema")
 cardNums <- seq(numCards)
+numTeams <- 2
+teamNames <- c("Team 1", "Team 2")
+scoreBoard <- rep("", numSets)
+names(scoreBoard) <- setToName(c(1:numSets))
+teamBoard <- rep("", numSets)
+names(teamBoard) <- names(scoreBoard)
     
 cardToFlavor <- function(cardIndex){
     cardNum <- cardIndex - 1
@@ -274,6 +280,12 @@ finishPossibleSets <- function(thePlayer){
             }
             print(paste(thePlayer, "finishes the set", setToName(theSet)))
             doFinishingFormalities(thePlayer, theSet)
+            setName <- setToName(theSet)
+            theTeam <- teamNames[(playerIndex - 1) %% 2 + 1]
+            scoreBoard[setName] <<- thePlayer
+            teamBoard[setName] <<- theTeam
+            print(scoreBoard)
+            print(teamBoard)
         }
     }
 }
@@ -390,17 +402,34 @@ gameGo <- function(curPlayer){
     print ("==================")
     roundNum <<- roundNum + 1
     
-    finishPossibleSets(curPlayer)
-    # The player may be left with zero cards after finishing the set.
-    # Check and if so, pass on the turn to other players
-    playerIndex <- checkForPassOn(curPlayer)
-    if (playerIndex == 0){
-        # Game Over
-        print ("Game Over!")
-        return()
+    thePlayer <- "NOTSET"
+    
+    while(TRUE){
+        finishPossibleSets(curPlayer)
+        # The player may be left with zero cards after finishing the set.
+        # Check and if so, pass on the turn to other players
+        playerIndex <- checkForPassOn(curPlayer)
+        if (playerIndex == 0){
+            break # Game Over
+        }
+        thePlayer <- playerNames[playerIndex]
+        
+        if (curPlayer == thePlayer){
+            # All Done; Finishable sets by the player finished
+            # Still cards are remaining with him to play
+            break
+        } else {
+            # No more cards with curPlayer, new player got assigned in 
+            # thePlayer, we need finish off the sets for him.
+            curPlayer <- thePlayer
+        }
     }
-   
-    thePlayer <- playerNames[playerIndex]
+    
+    if (playerIndex == 0){
+        print ("Game Over!")
+        return ()
+    }
+    
     cardsToAsk <- askableCards(thePlayer)
     
     currentHolders <- setdiff(holderNames, 
