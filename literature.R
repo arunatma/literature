@@ -143,14 +143,15 @@ transaction <- function(asker, giver, theCard){
     if (txnDone){
         # Taking the card giver set and placing it in the asker set
         cardsAndPlayers[[askerIndex]] <<- c(askerCards, theCard)
-        cardsAndPlayers[[giverIndex]] <<- 
-            giverCards[-c(which(giverCards == theCard))]
+        cardsAndPlayers[[giverIndex]] <<- setdiff(giverCards, theCard)
             
         # Now, all know that the card was present with giver, now gone to asker
         # update probabilities accordingly
         probTable[view(playerNames), hold(asker), theCard] <<- 1
         nonHolders <- holderNames[which(playerNames != asker)]
         probTable[view(playerNames), nonHolders, theCard] <<- 0
+        
+        handleEmptyHand(giver)
         
         print ("Transaction Done!")
         print (paste(asker, "gets the card", theCard, cardName, "from", giver))
@@ -180,6 +181,7 @@ updateProb <- function(theViewer, theCard){
     
     probTable[theViewer, holderNames[nonZeroProb], theCard] <<- updatedProb
 }
+
 
 setCards <- function(setNum){
     maxLimit <- setNum * numCardsInSet
@@ -243,6 +245,12 @@ checkRootExists <- function(theSet, thePlayer){
 }
 
 finishPossibleSets <- function(thePlayer){
+
+    # Process Only if the player has some cards with him
+    playerIndex <- which(playerNames == thePlayer)
+    if(cardsWithPlayer[playerIndex] == FALSE)
+        return ()
+
     # When the chance comes, check if any set can be finished
     setFinishes <- sapply(setIndices, canFinishSet, thePlayer)
     finishableSets <- which(setFinishes == TRUE)
@@ -257,12 +265,85 @@ finishPossibleSets <- function(thePlayer){
                 cardInSet <- (ac - 1) %/% 6 + 1       # Quotient
                 giverIndex <- (ac - 1) %% 6 + 1       # Reminder
                 theCard <- cards[cardInSet] 
-                giver <- playerNames[giverIndex] 
+                giver <- playerNames[giverIndex]
                 
+                if (thePlayer == giver)
+                    next  
+                    
                 transaction(thePlayer, giver, theCard)
             }
             print(paste(thePlayer, "finishes the set", setToName(theSet)))
+            doFinishingFormalities(thePlayer, theSet)
         }
+    }
+}
+
+handleEmptyHand <- function (thePlayer){
+    playerIndex <- which(playerNames == thePlayer)
+    playerCards <- cardsAndPlayers[[playerIndex]]
+    # Update if the cards are done for this player
+    if(length(playerCards) == 0){
+        cardsWithPlayer[playerIndex] <<- FALSE
+        
+        probTable[viewerNames, hold(thePlayer), ] <<- 0
+        # update probabilites for all cards for all viewers
+        for (theCard in cardNums){
+            sapply(viewerNames, updateProb, theCard)
+        }
+    }
+}
+
+doFinishingFormalities <- function(thePlayer, theSet){
+    theCards <- setCards(theSet)
+    playerIndex <- which(playerNames == thePlayer)
+    playerCards <- cardsAndPlayers[[playerIndex]]
+    
+    updatedCards <- setdiff(playerCards, theCards)
+    # Removing the cards of finished set from the player
+    cardsAndPlayers[[playerIndex]] <<- updatedCards
+    
+    # Update the probability table:  Assign zero probability for these cards
+    probTable[,,theCards] <<- 0
+    # update probabilites for these cards for all viewers
+    for (theCard in theCards){
+        sapply(viewerNames, updateProb, theCard)
+    }
+    
+    handleEmptyHand(thePlayer)
+    
+    outMsg <- paste0(
+        "Finished Set: ", theSet, 
+        ". Updated ProbTable & CardsAndPlayers after finishing the Set")
+    print (outMsg)
+}
+
+checkForPassOn <- function(thePlayer){
+    # Gets Player Name and Returns Player Index 
+    # Returns 0 if no more players are having cards 
+    playerIndex <- which(playerNames == thePlayer)
+    if (cardsWithPlayer[playerIndex]){
+        return (playerIndex)
+    } else {
+        nextPlayerIndex <- findPlayerWithCards(playerIndex)
+        return (nextPlayerIndex)
+    }
+}
+
+findPlayerWithCards <- function(playerIndex){
+    # See if team players are available
+    # If not, go to opponent players
+    teamPlayers <- sameTeam(playerIndex)
+    #oppPlayers <- opponents(playerIndex)
+    oppPlayers <- c()
+    roundPlayers <- c(teamPlayers, oppPlayers)
+    
+    validPlayers <- which(cardsWithPlayer[roundPlayers] == TRUE)
+    if(length(validPlayers) == 0){
+        # No more player has the cards!
+        return (0)
+    } else {
+        nextPlayer <- roundPlayers[validPlayers[1]]
+        return (nextPlayer)
     }
 }
 
@@ -270,6 +351,9 @@ finishPossibleSets <- function(thePlayer){
 # Each player will get 8 cards randomly - taken care by 'sample' function
 cardsAndPlayers <- split(sample(cardNums), factor(seq(numPlayers)))
 # This is a list; Access by cardsAndPlayers[[1]]
+
+# This holds info on whether there are cards existing with the player
+cardsWithPlayer <- rep(TRUE, 6)
 
 # Probability Matrix for each card; as a viewer(v) guesses the holder (h)
 # Proabibility is what the viewer assigns to each card for each holder
@@ -292,6 +376,7 @@ sapply(playerNames, initProb)
 # Game Starts Here
 startPlayerIndex <- sample(numPlayers, 1)
 thePlayer <- playerNames[startPlayerIndex]
+roundNum <- 1
 
 pickMax <- function (inArray){
     # pick the max value other than 1
@@ -299,11 +384,25 @@ pickMax <- function (inArray){
     return (max (inArray))
 }
 
-gameGo <- function(thePlayer){
-    finishPossibleSets(thePlayer)
+gameGo <- function(curPlayer){
+    print ("==================")
+    print (paste0("      Round:", sprintf("%4s", roundNum), "  "))
+    print ("==================")
+    roundNum <<- roundNum + 1
+    
+    finishPossibleSets(curPlayer)
+    # The player may be left with zero cards after finishing the set.
+    # Check and if so, pass on the turn to other players
+    playerIndex <- checkForPassOn(curPlayer)
+    if (playerIndex == 0){
+        # Game Over
+        print ("Game Over!")
+        return()
+    }
+   
+    thePlayer <- playerNames[playerIndex]
     cardsToAsk <- askableCards(thePlayer)
     
-    playerIndex <- which(playerNames == thePlayer)
     currentHolders <- setdiff(holderNames, 
         holderNames[c(playerIndex, sameTeam(playerIndex))])
     lenHolders <- length(currentHolders)    
@@ -320,7 +419,7 @@ gameGo <- function(thePlayer){
     nextPlayer <- transaction(thePlayer, playerToAsk, cardToAsk)
 
     print(cardsAndPlayers)
-    print(probTable[,,cardToAsk])
-    readline(prompt="Press [enter] to continue - Next Round!")
+    print(probTable[view(thePlayer),,])
+    # readline(prompt="Press [enter] to continue - Next Round!")
     gameGo(nextPlayer)
 }
