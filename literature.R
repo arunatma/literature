@@ -39,10 +39,6 @@ playerNames <- c("Abel", "Benz", "Carl", "Dira", "Elly", "Fema")
 cardNums <- seq(numCards)
 numTeams <- 2
 teamNames <- c("Team 1", "Team 2")
-scoreBoard <- rep("", numSets)
-names(scoreBoard) <- setToName(c(1:numSets))
-teamBoard <- rep("", numSets)
-names(teamBoard) <- names(scoreBoard)
     
 cardToFlavor <- function(cardIndex){
     cardNum <- cardIndex - 1
@@ -93,6 +89,11 @@ cardToName <- function(cardNum){
     return (comboName)
 }
 
+scoreBoard <- rep("", numSets)
+names(scoreBoard) <- setToName(c(1:numSets))
+teamBoard <- rep("", numSets)
+names(teamBoard) <- names(scoreBoard)
+
 initProb <- function (thePlayer){
     # This function updates the probTable
     # probTable is not passed inside; Assumed to be global
@@ -129,7 +130,6 @@ initProb <- function (thePlayer){
     probTable[curViewer, curNonHolders, otherCards] <<- 0.2
 }
 
-
 transaction <- function(asker, giver, theCard){
     cardName <- cardToName(theCard)
     if (!(theCard %in% askableCards(asker))){
@@ -137,12 +137,13 @@ transaction <- function(asker, giver, theCard){
         return (asker)
     }
     
-    print (paste(asker, "asks the card", theCard, cardName, "from", giver))
     askerIndex <- which(playerNames == asker)
     askerCards <- cardsAndPlayers[[askerIndex]]
     
     giverIndex <- which(playerNames == giver)
     giverCards <- cardsAndPlayers[[giverIndex]]
+        
+    print (paste(asker, "asks the card", theCard, cardName, "from", giver))
     
     txnDone <- theCard %in% giverCards
     
@@ -177,6 +178,14 @@ transaction <- function(asker, giver, theCard){
             "to give to", asker))
         return (giver)
     }
+    # The asker holds a root card. Everyone would know that.
+    # Irrespective of whether he gets the card or not (will be updated with 0 
+    # or 1), the remaining cards to be updated - for that holder.
+    # It depends on the already updated probabilites of each viewer.
+    # Assume Abel has 4 cards (9, 10, J, Q Spades).  Now Carl gets A Spade 
+    # from Benz.  K Spade of other 5 players (incl Carl) was 0.2 
+    # Now, probability of K Spade for Carl, as viewed by Abel has to be 
+    # updated.  Abel, should know for sure Carl has K Spade
 }
 
 updateProb <- function(theViewer, theCard){
@@ -187,7 +196,6 @@ updateProb <- function(theViewer, theCard){
     
     probTable[theViewer, holderNames[nonZeroProb], theCard] <<- updatedProb
 }
-
 
 setCards <- function(setNum){
     maxLimit <- setNum * numCardsInSet
@@ -260,7 +268,6 @@ finishPossibleSets <- function(thePlayer){
     # When the chance comes, check if any set can be finished
     setFinishes <- sapply(setIndices, canFinishSet, thePlayer)
     finishableSets <- which(setFinishes == TRUE)
-    print(finishableSets)
     finishPossible <- (length(finishableSets) > 0)
 
     if (finishPossible){
@@ -323,10 +330,7 @@ doFinishingFormalities <- function(thePlayer, theSet){
     
     handleEmptyHand(thePlayer)
     
-    outMsg <- paste0(
-        "Finished Set: ", theSet, 
-        ". Updated ProbTable & CardsAndPlayers after finishing the Set")
-    print (outMsg)
+    print(paste0("Finished Set: ", theSet))
 }
 
 checkForPassOn <- function(thePlayer){
@@ -343,52 +347,18 @@ checkForPassOn <- function(thePlayer){
 
 findPlayerWithCards <- function(playerIndex){
     # See if team players are available
-    # If not, go to opponent players
     teamPlayers <- sameTeam(playerIndex)
-    #oppPlayers <- opponents(playerIndex)
-    oppPlayers <- c()
-    roundPlayers <- c(teamPlayers, oppPlayers)
     
-    validPlayers <- which(cardsWithPlayer[roundPlayers] == TRUE)
+    # If one team (all 3 players) are left with no cards, game over!
+    validPlayers <- which(cardsWithPlayer[teamPlayers] == TRUE)
     if(length(validPlayers) == 0){
-        # No more player has the cards!
+        # No more team player has the cards!
         return (0)
     } else {
-        nextPlayer <- roundPlayers[validPlayers[1]]
+        nextPlayer <- teamPlayers[validPlayers[1]]
         return (nextPlayer)
     }
 }
-
-# Card Numbers will be 1 to 48
-# Each player will get 8 cards randomly - taken care by 'sample' function
-cardsAndPlayers <- split(sample(cardNums), factor(seq(numPlayers)))
-# This is a list; Access by cardsAndPlayers[[1]]
-
-# This holds info on whether there are cards existing with the player
-cardsWithPlayer <- rep(TRUE, 6)
-
-# Probability Matrix for each card; as a viewer(v) guesses the holder (h)
-# Proabibility is what the viewer assigns to each card for each holder
-# For a viewer, sum of probabilities of a card across holders will be 1
-# Probability Matrix :: Dimension - Viewer, Holder and Card
-
-probTable <- array(0, c(numPlayers, numPlayers, numCards))
-view <- function(x){paste0("v", x)}
-hold <- function(x){paste0("h", x)}
-viewerNames <- paste0("v", playerNames)
-holderNames <- paste0("h", playerNames)
-dimnames(probTable) <- list(viewerNames, holderNames, paste(cardNums))
-# Initialize all to NA values
-probTable[,,] <- NA
-
-# update all initial probabilities using initProb function
-sapply(playerNames, initProb)
-
-
-# Game Starts Here
-startPlayerIndex <- sample(numPlayers, 1)
-thePlayer <- playerNames[startPlayerIndex]
-roundNum <- 1
 
 pickMax <- function (inArray){
     # pick the max value other than 1
@@ -407,7 +377,7 @@ gameGo <- function(curPlayer){
     while(TRUE){
         finishPossibleSets(curPlayer)
         # The player may be left with zero cards after finishing the set.
-        # Check and if so, pass on the turn to other players
+        # Check and if so, pass on the turn to other players of the same team.
         playerIndex <- checkForPassOn(curPlayer)
         if (playerIndex == 0){
             break # Game Over
@@ -437,18 +407,84 @@ gameGo <- function(curPlayer){
     lenHolders <- length(currentHolders)    
     theViewer <- view(thePlayer)
     maxValue <- pickMax(probTable[theViewer, currentHolders, cardsToAsk])
-    maxPosn <- which(probTable[theViewer, currentHolders, cardsToAsk] == maxValue)
+    maxPosn <- 
+        which(probTable[theViewer, currentHolders, cardsToAsk] == maxValue)
     lmax <- length(maxPosn)
     # can ask anyone randomly who all have same max probabilites.
     randomIndex <- sample(lmax, 1)
 
-    cardToAsk <- cardsToAsk[(maxPosn - 1) %/% lenHolders  + 1][randomIndex]
-    holderToAsk <- currentHolders[(maxPosn - 1) %% lenHolders + 1][randomIndex]
-    playerToAsk <- substring(holderToAsk, 2)
+    if(!autoMode && playerIndex == 1){
+        cardToAsk   <- as.integer(readline(prompt="Enter Card (1 to 48): "))
+        playerNumToAsk <- as.integer(readline(prompt="Enter Player (2, 4, 6): "))
+        playerToAsk <- playerNames[playerNumToAsk]
+        # Do validations on whether that player can ask that card
+    } else {
+        cardToAsk <- cardsToAsk[(maxPosn - 1) %/% lenHolders  + 1][randomIndex]
+        holderToAsk <- currentHolders[(maxPosn - 1) %% lenHolders + 1][randomIndex]
+        playerToAsk <- substring(holderToAsk, 2)
+    }
+    
+    
     nextPlayer <- transaction(thePlayer, playerToAsk, cardToAsk)
 
-    print(cardsAndPlayers)
-    print(probTable[view(thePlayer),,])
-    # readline(prompt="Press [enter] to continue - Next Round!")
+    printCardDetails()
+    readline(prompt="Press [enter] to next round.")    
     gameGo(nextPlayer)
 }
+
+printCardDetails <- function(){
+    if(autoMode){
+        print(cardsAndPlayers)
+        print(probTable[view(thePlayer),,])
+    } else {
+        print(cardsAndPlayers[1])
+        print(sapply(cardsAndPlayers[[1]], cardToName))
+    }
+}
+
+################################################################################
+# Game Starts Here
+################################################################################
+
+# Card Numbers will be 1 to 48
+# Each player will get 8 cards randomly - taken care by 'sample' function
+cardsAndPlayers <- split(sample(cardNums), factor(seq(numPlayers)))
+# This is a list; Access by cardsAndPlayers[[1]]
+
+# This holds info on whether there are cards existing with the player
+cardsWithPlayer <- rep(TRUE, 6)
+
+
+# Set the autoMode to TRUE, to run automatically.
+autoMode <- FALSE
+# When autoMode is FALSE, human player represents instead of Abel
+if (!autoMode){
+    humanName <- readline(prompt="Enter name: ")
+    playerNames[1] <- humanName
+}
+
+# Probability Matrix for each card; as a viewer(v) guesses the holder (h)
+# Proabibility is what the viewer assigns to each card for each holder
+# For a viewer, sum of probabilities of a card across holders will be 1
+# Probability Matrix :: Dimension - Viewer, Holder and Card
+
+probTable <- array(0, c(numPlayers, numPlayers, numCards))
+view <- function(x){paste0("v", x)}
+hold <- function(x){paste0("h", x)}
+viewerNames <- paste0("v", playerNames)
+holderNames <- paste0("h", playerNames)
+dimnames(probTable) <- list(viewerNames, holderNames, paste(cardNums))
+# Initialize all to NA values
+probTable[,,] <- NA
+
+# update all initial probabilities using initProb function
+sapply(playerNames, initProb)
+
+startPlayerIndex <- sample(numPlayers, 1)
+thePlayer <- playerNames[startPlayerIndex]
+roundNum <- 1
+
+printCardDetails()
+# This starts of the game looping
+gameGo(thePlayer)
+
