@@ -185,7 +185,7 @@ transaction <- function(asker, giver, theCard){
     # Assume Abel has 4 cards (9, 10, J, Q Spades).  Now Carl gets A Spade 
     # from Benz.  K Spade of other 5 players (incl Carl) was 0.2 
     # Now, probability of K Spade for Carl, as viewed by Abel has to be 
-    # updated.  Abel, should know for sure Carl has K Spade
+    # updated.  Abel, should know for sure Carl has K-Spade
 }
 
 updateProb <- function(theViewer, theCard){
