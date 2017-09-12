@@ -146,7 +146,7 @@ transaction <- function(asker, giver, theCard){
     print (paste(asker, "asks the card", theCard, cardName, "from", giver))
     
     txnDone <- theCard %in% giverCards
-    
+    nonHolders <- holderNames[which(playerNames != asker)]
     if (txnDone){
         # Taking the card giver set and placing it in the asker set
         cardsAndPlayers[[askerIndex]] <<- c(askerCards, theCard)
@@ -155,7 +155,6 @@ transaction <- function(asker, giver, theCard){
         # Now, all know that the card was present with giver, now gone to asker
         # update probabilities accordingly
         probTable[view(playerNames), hold(asker), theCard] <<- 1
-        nonHolders <- holderNames[which(playerNames != asker)]
         probTable[view(playerNames), nonHolders, theCard] <<- 0
         
         handleEmptyHand(giver)
@@ -179,13 +178,31 @@ transaction <- function(asker, giver, theCard){
         return (giver)
     }
     # The asker holds a root card. Everyone would know that.
-    # Irrespective of whether he gets the card or not (will be updated with 0 
-    # or 1), the remaining cards to be updated - for that holder.
-    # It depends on the already updated probabilites of each viewer.
     # Assume Abel has 4 cards (9, 10, J, Q Spades).  Now Carl gets A Spade 
     # from Benz.  K Spade of other 5 players (incl Carl) was 0.2 
     # Now, probability of K Spade for Carl, as viewed by Abel has to be 
-    # updated.  Abel, should know for sure Carl has K-Spade
+    # updated to 1.  Abel, should know for sure Carl has K-Spade!
+    # If anyone knows the holder of 5 cards in a set, the 6th card, he does not 
+    # yet know, has to be with the asker. That probability be updated as 1, 
+    # and the probability for the card with other folks be updated 0.
+    # This has to be done for all players.
+    
+    setNum <- cardToSetNum(theCard)
+    curSetCards <- setCards(setNum)
+    for(theViewer in viewerNames){
+        knownCards <- c()
+        for (cardId in curSetCards){
+            numOnes <- length(which(probTable[theViewer,holderNames,cardId]==1))
+            if(numOnes == 1) {
+                knownCards <- c(knownCards, cardId)
+            }
+        }
+        if(length(knownCards == 5)){
+            rootCard <- setdif(curSetCards, knownCards)
+            probTable[theViewer, hold(asker), rootCard] <<- 1
+            probTable[theViewer, nonHolders, rootCard] <<- 0
+        }
+    }
 }
 
 updateProb <- function(theViewer, theCard){
@@ -428,7 +445,8 @@ gameGo <- function(curPlayer){
     nextPlayer <- transaction(thePlayer, playerToAsk, cardToAsk)
 
     printCardDetails()
-    readline(prompt="Press [enter] to next round.")    
+    if(!autoMode)
+        readline(prompt="Press [enter] to next round.")    
     gameGo(nextPlayer)
 }
 
@@ -439,6 +457,7 @@ printCardDetails <- function(){
     } else {
         print(cardsAndPlayers[1])
         print(sapply(cardsAndPlayers[[1]], cardToName))
+        flush.console()
     }
 }
 
