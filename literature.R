@@ -22,6 +22,7 @@
 # Card Names    : 3 to A in Spades, Clubs, Hearts and Diamonds
 # Card Mapping  : 0 to 5 is 3 to 8 in Spades, 42 to 47 is 9 to A in Diamonds.
 
+roundNum <- 1
 numPlayers <- 6
 numFlavors <- 4
 numPoles <- 2
@@ -39,6 +40,10 @@ playerNames <- c("Abel", "Benz", "Carl", "Dira", "Elly", "Fema")
 cardNums <- seq(numCards)
 numTeams <- 2
 teamNames <- c("Team 1", "Team 2")
+
+# Simple view and hold functions 
+view <- function(x){paste0("v", x)}
+hold <- function(x){paste0("h", x)}
     
 cardToFlavor <- function(cardIndex){
     cardNum <- cardIndex - 1
@@ -88,11 +93,6 @@ cardToName <- function(cardNum){
     comboName <- paste(cardName, flavorName, sep="-")
     return (comboName)
 }
-
-scoreBoard <- rep("", numSets)
-names(scoreBoard) <- setToName(c(1:numSets))
-teamBoard <- rep("", numSets)
-names(teamBoard) <- names(scoreBoard)
 
 initProb <- function (thePlayer){
     # This function updates the probTable
@@ -383,7 +383,7 @@ pickMax <- function (inArray){
     return (max (inArray))
 }
 
-gameGo <- function(curPlayer){
+gameGo <- function(curPlayer, autoMode){
     print ("==================")
     print (paste0("      Round:", sprintf("%4s", roundNum), "  "))
     print ("==================")
@@ -444,13 +444,13 @@ gameGo <- function(curPlayer){
     
     nextPlayer <- transaction(thePlayer, playerToAsk, cardToAsk)
 
-    printCardDetails()
+    printCardDetails(thePlayer, autoMode)
     if(!autoMode)
         readline(prompt="Press [enter] to next round.")    
-    gameGo(nextPlayer)
+    gameGo(nextPlayer, autoMode)
 }
 
-printCardDetails <- function(){
+printCardDetails <- function(thePlayer, autoMode){
     if(autoMode){
         print(cardsAndPlayers)
         print(probTable[view(thePlayer),,])
@@ -461,49 +461,64 @@ printCardDetails <- function(){
     }
 }
 
-################################################################################
-# Game Starts Here
-################################################################################
 
-# Card Numbers will be 1 to 48
-# Each player will get 8 cards randomly - taken care by 'sample' function
-cardsAndPlayers <- split(sample(cardNums), factor(seq(numPlayers)))
-# This is a list; Access by cardsAndPlayers[[1]]
+cardsAndPlayers <- list()
+cardsWithPlayers <- c()
+viewerNames <- c()
+holderNames <- c()
+probTable <- array()
 
-# This holds info on whether there are cards existing with the player
-cardsWithPlayer <- rep(TRUE, 6)
-
+scoreBoard <- rep("", numSets)
+names(scoreBoard) <- setToName(c(1:numSets))
+teamBoard <- rep("", numSets)
+names(teamBoard) <- names(scoreBoard)
 
 # Set the autoMode to TRUE, to run automatically.
-autoMode <- FALSE
-# When autoMode is FALSE, human player represents instead of Abel
-if (!autoMode){
-    humanName <- readline(prompt="Enter name: ")
-    playerNames[1] <- humanName
+# autoMode <- FALSE
+runGame <- function(autoMode){
+    ############################################################################
+    #            Game Starts Here
+    #   Invoke runGame(FALSE) for game involving a single human player 
+    #   Invoke runGame(TRUE) for automatic run - all computer players 
+    ############################################################################
+
+    # Reinitialize the roundNumber 
+    roundNum <<- 1 
+    
+    # Reinitialize the score boards
+    scoreBoard <<- setNames(rep("", numSets), names(scoreBoard))
+    teamBoard <<- setNames(rep("", numSets), names(teamBoard))
+    
+    # Card Numbers will be 1 to 48
+    # Each player will get 8 cards randomly - taken care by 'sample' function
+    cardsAndPlayers <<- split(sample(cardNums), factor(seq(numPlayers)))
+    # This is a list; Access by cardsAndPlayers[[1]]
+
+    # This holds info on whether there are cards existing with the player
+    cardsWithPlayer <<- rep(TRUE, 6)
+    
+    # When autoMode is FALSE, human player represents instead of Abel
+    if (!autoMode){
+        humanName <- readline(prompt="Enter name: ")
+        playerNames[1] <<- humanName
+    }
+
+    viewerNames <<- paste0("v", playerNames)
+    holderNames <<- paste0("h", playerNames)
+    # Probability Matrix for each card; as a viewer(v) guesses the holder (h)
+    # Proabibility is what the viewer assigns to each card for each holder
+    # For a viewer, sum of probabilities of a card across holders will be 1
+    # Probability Matrix :: Dimension - Viewer, Holder and Card
+    probTable <<- array(NA, c(numPlayers, numPlayers, numCards), 
+        dimnames = list(viewerNames, holderNames, paste(cardNums)))
+    
+    # update all initial probabilities using initProb function
+    sapply(playerNames, initProb)
+    
+    startPlayerIndex <- sample(numPlayers, 1)
+    thePlayer <- playerNames[startPlayerIndex]
+
+    printCardDetails(thePlayer, autoMode)
+    # This starts of the game looping
+    gameGo(thePlayer, autoMode)
 }
-
-# Probability Matrix for each card; as a viewer(v) guesses the holder (h)
-# Proabibility is what the viewer assigns to each card for each holder
-# For a viewer, sum of probabilities of a card across holders will be 1
-# Probability Matrix :: Dimension - Viewer, Holder and Card
-
-probTable <- array(0, c(numPlayers, numPlayers, numCards))
-view <- function(x){paste0("v", x)}
-hold <- function(x){paste0("h", x)}
-viewerNames <- paste0("v", playerNames)
-holderNames <- paste0("h", playerNames)
-dimnames(probTable) <- list(viewerNames, holderNames, paste(cardNums))
-# Initialize all to NA values
-probTable[,,] <- NA
-
-# update all initial probabilities using initProb function
-sapply(playerNames, initProb)
-
-startPlayerIndex <- sample(numPlayers, 1)
-thePlayer <- playerNames[startPlayerIndex]
-roundNum <- 1
-
-printCardDetails()
-# This starts of the game looping
-gameGo(thePlayer)
-
